@@ -588,7 +588,7 @@ async function handle(req, res) {
       return;
     }
 
-    if (req.method === "POST" && rest.endsWith("/share")) {
+    if (req.method === "POST" && (rest === "share" || rest.endsWith("/share"))) {
       const body = await readJson(req);
       const persona = requirePersona(body, res);
       if (!persona) return;
