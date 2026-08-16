@@ -76,12 +76,16 @@ export async function shareFolder({ folderId, orgId, userId }) {
   });
 }
 
-export const SMART_FILES_APP_URL = "https://smart-files-app.vercel.app";
+export async function resolveShare(token) {
+  return filesFetch(`/api/smart-files/share/${encodeURIComponent(token)}`);
+}
+
+export const PLAN_REVIEW_APP_URL = "https://plan-review-app-ten.vercel.app";
 export const SMARTSITE_MAP_ORIGIN = "https://smartsite.cloud";
 
 export function dataRoomUrl(token) {
   if (!token) return null;
-  return `${SMART_FILES_APP_URL}/#share=${token}`;
+  return `${PLAN_REVIEW_APP_URL}/applicant?token=${token}`;
 }
 
 export function smartSiteMapUrl(parcelNodeId) {

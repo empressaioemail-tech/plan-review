@@ -80,6 +80,15 @@ export async function getEngagement(id) {
   return rows[0] ? mapEngagement(rows[0]) : null;
 }
 
+export async function findEngagementByFolder(folderId) {
+  if (!folderId) return null;
+  const { rows } = await getPool().query(
+    `SELECT * FROM plan_review_engagements WHERE files_folder_id = $1 LIMIT 1`,
+    [folderId],
+  );
+  return rows[0] ? mapEngagement(rows[0]) : null;
+}
+
 export async function listEngagements() {
   const { rows } = await getPool().query(
     `SELECT * FROM plan_review_engagements ORDER BY created_at DESC`,

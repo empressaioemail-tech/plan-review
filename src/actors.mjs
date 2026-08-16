@@ -2,6 +2,7 @@
 export const QA_PERSONAS = [
   { orgId: "icc-demo", userId: "reviewer", label: "Empressa reviewer / icc-demo" },
   { orgId: "icc-demo", userId: "observer", label: "ICC observer / icc-demo" },
+  { orgId: "icc-demo", userId: "applicant", label: "Applicant / icc-demo" },
 ];
 
 export function resolvePersona(orgId, userId) {

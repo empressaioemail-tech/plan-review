@@ -1,6 +1,7 @@
 const PERSONAS = [
   { orgId: "icc-demo", userId: "reviewer", label: "Reviewer / icc-demo" },
   { orgId: "icc-demo", userId: "observer", label: "Observer / icc-demo" },
+  { orgId: "icc-demo", userId: "applicant", label: "Applicant / icc-demo" },
 ];
 const STAGES = ["Submitted", "In Review", "Approved", "Approved with Conditions", "Denied"];
 const ICC_ACTOR = "did:hauska:actor:org:icc";
@@ -25,6 +26,10 @@ function persona() {
 
 function isReviewer() {
   return personaValue() === "icc-demo/reviewer";
+}
+
+function isApplicant() {
+  return personaValue() === "icc-demo/applicant";
 }
 
 function setPersona(value) {
@@ -326,13 +331,13 @@ async function renderTab(pane, engagement, tab) {
       <ul class="list">${(docs.documents || [])
         .map((f) => `<li>${escapeHtml(f.title || f.entityId)}<div class="meta">${escapeHtml(f.entityId)}</div></li>`)
         .join("") || "<li class='meta'>No sheets yet.</li>"}</ul>
-      ${isReviewer() ? `<form class="stack" id="upload"><input type="file" name="file" required /><button type="submit">Upload to Smart Files</button></form>
+      ${isReviewer() ? `<form class="stack" id="upload"><input type="file" name="file" required /><button type="submit">Upload to this engagement</button></form>
       <div class="share-box">
-        <p>Share this room as a data room with the architect, homeowner, or contractor who submitted the plan. They open a read-only Smart Files link. They do not need an icc-demo login. This is not an applicant portal.</p>
-        <button type="button" id="share">Share data room</button>
+        <p>Share the applicant view on this plan-review host. Smart Files stores the bytes. Do not send the applicant to smart-files-app.</p>
+        <button type="button" id="share">Share applicant view</button>
         <p id="share-out" class="meta" hidden></p>
         <p id="share-link" class="sub" hidden></p>
-      </div>` : `<p class="sub">Observer can see the room. Reviewer uploads and shares the data room.</p>`}
+      </div>` : `<p class="sub">${isApplicant() ? "Applicant view is this plan-review UI. Load files as reviewer, then share the applicant link." : "Observer can see the room. Reviewer loads files here."}</p>`}
     `;
     const form = document.getElementById("upload");
     if (form) {
@@ -366,7 +371,7 @@ async function renderTab(pane, engagement, tab) {
         outEl.textContent = `folder ${out.folderId || ""} · kind ${out.kind || "data-room"} · store ${out.store || "smart-files"}`;
         linkEl.hidden = false;
         if (url) {
-          linkEl.innerHTML = `Submitter data room: <a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a>`;
+          linkEl.innerHTML = `Applicant view: <a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a>`;
           try {
             await navigator.clipboard.writeText(url);
             linkEl.innerHTML += " (copied)";
@@ -519,12 +524,42 @@ async function renderActivity() {
   `;
 }
 
+async function renderApplicant() {
+  const token = new URL(location.href).searchParams.get("token") || "";
+  if (!token) {
+    app.innerHTML = `
+      <h2>Applicant</h2>
+      <p>This is the plan-review applicant view. Open the link the reviewer shared. Smart Files is the file store, not this screen's host.</p>
+      <p class="sub">No token. Ask the reviewer to share the applicant view from the Files tab.</p>
+    `;
+    return;
+  }
+  const data = await api("/api/plan-review/applicant/room", { query: { token } });
+  const eng = data.engagement || {};
+  app.innerHTML = `
+    <h2>Applicant</h2>
+    <p class="sub">Plan-review applicant view. Store=${escapeHtml(data.store || "smart-files")}. Host=${escapeHtml(data.host || "plan-review")}.</p>
+    <p>Parcel ${escapeHtml(eng.parcelNodeId || "(not linked)")} · ${escapeHtml(eng.jurisdiction || "")} · stage ${escapeHtml(eng.stage || "")}</p>
+    <p class="meta">folder ${escapeHtml(data.folderId || "none")}</p>
+    <ul class="list">${(data.files || [])
+      .map((f) => `<li>${escapeHtml(f.title || f.entityId)}<div class="meta">${escapeHtml(f.entityId)}</div></li>`)
+      .join("") || "<li class='meta'>No files in this room yet. The reviewer loads them in plan review.</li>"}</ul>
+    <p class="sub">${escapeHtml(data.note || "")}</p>
+  `;
+}
+
 async function render() {
   showErr("");
-  whoEl.textContent = personaValue() || "not gated";
+  whoEl.textContent = personaValue() || (pathOf() === "/applicant" ? "applicant" : "not gated");
   const path = pathOf();
   const tab = new URL(location.href).searchParams.get("tab") || "intake";
+  const iccNav = document.querySelector('nav a[href="/icc/activity"]');
+  if (iccNav) iccNav.hidden = isApplicant() || path === "/applicant";
   try {
+    if (path === "/applicant") {
+      await renderApplicant();
+      return;
+    }
     if (path === "/gate" || path === "/") {
       renderGate();
       return;
@@ -547,10 +582,14 @@ async function render() {
       return;
     }
     if (path === "/icc/activity") {
+      if (isApplicant()) {
+        app.innerHTML = `<p>Applicant does not see ICC activity.</p><p><a href="/queue">Queue</a></p>`;
+        return;
+      }
       await renderActivity();
       return;
     }
-    app.innerHTML = `<p>Unknown route. Use queue, library, code, or ICC activity.</p>`;
+    app.innerHTML = `<p>Unknown route. Use queue, library, code, applicant, or ICC activity.</p>`;
   } catch (err) {
     showErr(err.message);
     if (err.status === 401 && path.startsWith("/icc")) {
@@ -570,9 +609,4 @@ document.querySelectorAll("nav a").forEach((a) => {
 });
 
 window.addEventListener("popstate", render);
-if (!personaValue() && pathOf() !== "/gate") {
-  if (pathOf().startsWith("/icc")) {
-    /* middleware already 401s unauthed /icc; if we got here, no cookie in localStorage */
-  }
-}
 render();

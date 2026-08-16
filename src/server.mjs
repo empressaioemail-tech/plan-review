@@ -5,6 +5,7 @@ import {
   dataRoomUrl,
   filesToDataroomAtoms,
   listFolderFiles,
+  resolveShare,
   shareFolder,
   smartSiteMapUrl,
   uploadToFolder,
@@ -12,6 +13,7 @@ import {
 import {
   createEngagement,
   findBySection,
+  findEngagementByFolder,
   getEngagement,
   getLetter,
   jurisdictionFromParcel,
@@ -218,6 +220,47 @@ async function handle(req, res) {
     return;
   }
 
+  if (req.method === "GET" && path === "/api/plan-review/applicant/room") {
+    const token = url.searchParams.get("token") || "";
+    if (!token) {
+      json(res, 400, { error: "token is required" });
+      return;
+    }
+    let data;
+    try {
+      data = await resolveShare(token);
+    } catch (err) {
+      json(res, err.status || 404, {
+        error: "share_not_found",
+        message: String(err.message),
+      });
+      return;
+    }
+    if (!data || data.error === "share_not_found") {
+      json(res, 404, { error: "share_not_found" });
+      return;
+    }
+    const folderId = data.folder?.folderId || data.folderId || null;
+    const engagement = folderId ? await findEngagementByFolder(folderId) : null;
+    json(res, 200, {
+      host: "plan-review",
+      store: "smart-files",
+      role: "applicant",
+      folderId,
+      files: data.files || [],
+      engagement: engagement
+        ? {
+            id: engagement.id,
+            parcelNodeId: engagement.parcelNodeId,
+            stage: engagement.stage,
+            jurisdiction: engagement.jurisdiction,
+          }
+        : null,
+      note: "Applicant view is plan-review UI. Smart Files is the file store, not the surface. Planner is not seeding more files.",
+    });
+    return;
+  }
+
   if (req.method === "GET" && path === "/api/plan-review/findings") {
     const sectionId = url.searchParams.get("sectionId") || "";
     if (!sectionId) {
@@ -344,16 +387,6 @@ async function handle(req, res) {
       userId: persona.userId,
       scopeText: body.scope || body.scopeText || null,
     });
-    try {
-      engagement = await ensureFolder(engagement, persona);
-    } catch (err) {
-      json(res, err.status || 503, {
-        error: "files_folder_failed",
-        message: String(err.message),
-        engagement,
-      });
-      return;
-    }
     await seedMatrix(engagement.id, engagement.parcelNodeId);
     await recordActivity({
       source: activitySource(req),
@@ -521,7 +554,7 @@ async function handle(req, res) {
           files: [],
           sheets: [],
           atomsByDocument: {},
-          note: "No Smart Files room yet. POST files-room.",
+          note: "No Smart Files room yet. Upload a file in plan review to create one. Planner is not seeding the files store.",
         });
         return;
       }
@@ -598,9 +631,15 @@ async function handle(req, res) {
       const body = await readJson(req);
       const persona = requirePersona(body, res);
       if (!persona) return;
-      const next = await ensureFolder(engagement, persona);
+      if (!engagement.filesFolderId) {
+        json(res, 409, {
+          error: "no_files_room",
+          message: "Upload a file in plan review first. Share does not create an empty Smart Files folder.",
+        });
+        return;
+      }
       const share = await shareFolder({
-        folderId: next.filesFolderId,
+        folderId: engagement.filesFolderId,
         orgId: persona.orgId,
         userId: persona.userId,
       });
@@ -608,11 +647,11 @@ async function handle(req, res) {
       json(res, 201, {
         ...share,
         store: "smart-files",
-        folderId: next.filesFolderId,
+        folderId: engagement.filesFolderId,
         kind: "data-room",
         audience: "submitter",
         dataRoomUrl: dataRoomUrl(token),
-        note: "Read-only Smart Files data room for the architect, homeowner, or contractor. Not an applicant portal. Token is this engagement folder only.",
+        note: "Applicant view is on plan-review-app /applicant. Smart Files is the store. smart-files-app is G-59 QA, not this room.",
       });
       return;
     }
