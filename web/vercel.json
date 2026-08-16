@@ -1,13 +1,6 @@
 {
-  "functions": {
-    "api/icc-page.js": {
-      "includeFiles": "index.html"
-    }
-  },
   "rewrites": [
     { "source": "/api/backend", "destination": "/api/backend" },
-    { "source": "/icc/activity", "destination": "/api/icc-page" },
-    { "source": "/icc", "destination": "/api/icc-page" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
