@@ -111,6 +111,47 @@ export async function setStage(id, stage) {
   return rows[0] ? mapEngagement(rows[0]) : null;
 }
 
+export async function upsertFinding(row) {
+  const { rows: existing } = await getPool().query(
+    `SELECT * FROM plan_review_findings
+      WHERE engagement_id = $1 AND section_id = $2
+      LIMIT 1`,
+    [row.engagementId, row.sectionId],
+  );
+  if (existing[0]?.override_reason) {
+    return mapFinding(existing[0]);
+  }
+  if (existing[0]) {
+    const { rows } = await getPool().query(
+      `UPDATE plan_review_findings
+          SET section_atom_id = $2,
+              book_id = $3,
+              citation = $4,
+              heading = $5,
+              analysis = $6,
+              determination = $7,
+              confidence = $8::jsonb,
+              icc_deep_link = $9,
+              updated_at = now()
+        WHERE id = $1
+        RETURNING *`,
+      [
+        existing[0].id,
+        row.sectionAtomId,
+        row.bookId || null,
+        row.citation,
+        row.heading || null,
+        row.analysis || null,
+        row.determination,
+        JSON.stringify(row.confidence),
+        row.iccDeepLink || null,
+      ],
+    );
+    return mapFinding(rows[0]);
+  }
+  return insertFinding(row);
+}
+
 export async function insertFinding(row) {
   const { rows } = await getPool().query(
     `INSERT INTO plan_review_findings

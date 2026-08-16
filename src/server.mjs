@@ -12,7 +12,6 @@ import {
   findBySection,
   getEngagement,
   getLetter,
-  insertFinding,
   jurisdictionFromParcel,
   listActivity,
   listCanned,
@@ -23,8 +22,16 @@ import {
   recordActivity,
   setEngagementFolder,
   setStage,
+  upsertFinding,
   upsertLetter,
 } from "./store.mjs";
+import {
+  chainBriefing,
+  envelopeGeojson,
+  getAtom,
+  getPropertyAtomChain,
+  matrixFromChain,
+} from "./mcp.mjs";
 
 const port = Number(process.env.PORT || 8080);
 const service = "plan-review";
@@ -111,37 +118,29 @@ function requirePersona(body, res) {
   return persona;
 }
 
-function assertedConfidence() {
-  return {
-    n: 0,
-    width: null,
-    provenance: "asserted-baseline",
-    basis: "asserted",
-    note: "Calibration is a later topic. This is not an earned score.",
-  };
-}
-
 function refuseCotality(obj) {
   const s = JSON.stringify(obj || {}).toLowerCase();
   return /cotality|corelogic|get_property_detail/.test(s);
 }
 
-async function seedMatrix(engagementId) {
-  const existing = await listFindings(engagementId);
-  if (existing.length) return existing;
+async function seedMatrix(engagementId, parcelNodeId) {
+  let chain = null;
+  try {
+    chain = await getPropertyAtomChain(parcelNodeId);
+  } catch (err) {
+    chain = { error: String(err.message), data: { status: "not_ready", slots: {} } };
+  }
+  const rows = matrixFromChain(parcelNodeId, chain);
   const out = [];
-  for (const s of IBC_SEED) {
+  for (const s of rows) {
     out.push(
-      await insertFinding({
+      await upsertFinding({
         engagementId,
         ...s,
-        determination: "Unchecked",
-        confidence: assertedConfidence(),
-        iccDeepLink: `https://codes.iccsafe.org/content/IBC2018P6/${s.sectionId}`,
       }),
     );
   }
-  return out;
+  return { sections: out, chainStatus: chain?.data?.status || chain?.status || "not_ready" };
 }
 
 function letterHtml(engagement, findings) {
@@ -230,6 +229,7 @@ async function handle(req, res) {
   if (req.method === "GET" && path === "/api/plan-review/code") {
     const book = (url.searchParams.get("book") || "").toUpperCase();
     const section = url.searchParams.get("section") || "";
+    const chapter = url.searchParams.get("chapter") || "";
     if (book.includes("IPMC")) {
       json(res, 200, {
         book: "IPMC2018P2",
@@ -243,7 +243,45 @@ async function handle(req, res) {
       });
       return;
     }
-    const hit = IBC_SEED.find((s) => s.sectionId === section) || IBC_SEED[0];
+    if (book.includes("UDC") || book.includes("BASTROP")) {
+      const udcId =
+        section === "14-02-008"
+          ? "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-008"
+          : "did:hauska:code-section:bastrop_tx-bdc-2026-adopted/14-02-003";
+      let atom = null;
+      try {
+        atom = await getAtom(udcId);
+      } catch {
+        atom = null;
+      }
+      const payload = atom?.data || atom?.atom || atom;
+      await recordActivity({
+        source: activitySource(req),
+        bookId: "BASTROP-UDC",
+        sectionId: section || "14-02-003",
+      });
+      json(res, 200, {
+        book: "BASTROP-UDC",
+        section: section || "14-02-003",
+        sectionAtomId: udcId,
+        citation: payload?.title
+          ? `City of Bastrop Building Block B3 Section ${section || "14-02-003"}`
+          : `City of Bastrop Building Block B3 Section ${section || "14-02-003"}`,
+        heading: payload?.title || payload?.sectionNumber || "District requirements",
+        analysis: payload?.bodyText
+          ? String(payload.bodyText).slice(0, 400)
+          : "Municipal UDC section from hauska catalog. Not ICC. No verbatim ICC body.",
+        bodyVerbatim: false,
+        chapters: ["14-02"],
+        sections: ["14-02-003", "14-02-008"],
+      });
+      return;
+    }
+    const chapterHits = IBC_SEED.filter((s) =>
+      chapter ? s.sectionId.startsWith(chapter.replace(/^R/i, "R")) || s.sectionId.startsWith(chapter) : true,
+    );
+    const hit =
+      IBC_SEED.find((s) => s.sectionId === section) || chapterHits[0] || IBC_SEED[0];
     await recordActivity({
       source: activitySource(req),
       bookId: hit.bookId,
@@ -251,13 +289,15 @@ async function handle(req, res) {
     });
     json(res, 200, {
       book: "IBC2018P6",
-      chapter: url.searchParams.get("chapter"),
+      chapter: chapter || hit.sectionId.replace(/\..*$/, ""),
       section: hit.sectionId,
       citation: hit.citation,
       heading: hit.heading,
       analysis: hit.analysis,
       bodyVerbatim: false,
       iccDeepLink: `https://codes.iccsafe.org/content/IBC2018P6/${hit.sectionId}`,
+      chapters: [...new Set(IBC_SEED.map((s) => s.sectionId.replace(/\..*$/, "")))],
+      sections: (chapterHits.length ? chapterHits : IBC_SEED).map((s) => s.sectionId),
     });
     return;
   }
@@ -312,7 +352,7 @@ async function handle(req, res) {
       });
       return;
     }
-    await seedMatrix(engagement.id);
+    await seedMatrix(engagement.id, engagement.parcelNodeId);
     await recordActivity({
       source: activitySource(req),
       engagementId: engagement.id,
@@ -348,35 +388,71 @@ async function handle(req, res) {
     }
 
     if (req.method === "GET" && rest === "matrix") {
+      const seeded = await seedMatrix(id, engagement.parcelNodeId);
+      await recordActivity({
+        source: activitySource(req),
+        engagementId: id,
+        bookId: "IBC2018P6",
+        sectionId: "R302.1",
+      });
       json(res, 200, {
         engagementId: id,
-        sections: await seedMatrix(id),
+        sections: seeded.sections,
+        chainStatus: seeded.chainStatus,
         bodyVerbatim: false,
       });
       return;
     }
 
+    if (req.method === "GET" && rest === "map-feature") {
+      try {
+        const chain = await getPropertyAtomChain(engagement.parcelNodeId);
+        json(res, 200, {
+          parcelNodeId: engagement.parcelNodeId,
+          geojson: envelopeGeojson(chain),
+          overlay: "buildable-envelope",
+          note: "Parcel-node geometry slot is pending. Envelope is the live atom-chain overlay, not a fabricated boundary.",
+        });
+      } catch (err) {
+        json(res, 200, {
+          parcelNodeId: engagement.parcelNodeId,
+          geojson: null,
+          note: String(err.message),
+        });
+      }
+      return;
+    }
+
     if (req.method === "GET" && rest === "briefing") {
       const sectionAtomId = url.searchParams.get("sectionAtomId") || "";
-      const findings = await listFindings(id);
-      const hit = findings.find((f) => f.sectionAtomId === sectionAtomId) || findings[0];
-      json(res, 200, {
-        engagementId: id,
-        sectionAtomId: hit?.sectionAtomId || sectionAtomId,
-        chain: hit
-          ? [
-              {
-                role: "source",
-                atomId: hit.sectionAtomId,
-                citation: hit.citation,
-                confidence: hit.confidence,
-                retrievedAt: new Date().toISOString(),
-                note: "Chain is the stored finding. Calibration later. No fabricated steps.",
-              },
-            ]
-          : [],
-        bodyVerbatim: false,
-      });
+      try {
+        const chain = await getPropertyAtomChain(engagement.parcelNodeId);
+        json(res, 200, {
+          engagementId: id,
+          sectionAtomId,
+          ...chainBriefing(chain, engagement.parcelNodeId),
+        });
+      } catch (err) {
+        const findings = await listFindings(id);
+        const hit = findings.find((f) => f.sectionAtomId === sectionAtomId) || findings[0];
+        json(res, 200, {
+          engagementId: id,
+          sectionAtomId: hit?.sectionAtomId || sectionAtomId,
+          chain: hit
+            ? [
+                {
+                  role: "source",
+                  atomId: hit.sectionAtomId,
+                  citation: hit.citation,
+                  confidence: hit.confidence,
+                  retrievedAt: new Date().toISOString(),
+                  note: `Atom-chain fetch failed: ${err.message}. Stored finding only. No fabricated steps.`,
+                },
+              ]
+            : [],
+          bodyVerbatim: false,
+        });
+      }
       return;
     }
 
@@ -527,10 +603,12 @@ async function handle(req, res) {
     }
 
     if (req.method === "POST" && rest === "compliance-run") {
+      const seeded = await seedMatrix(id, engagement.parcelNodeId);
       json(res, 200, {
         engagementId: id,
-        sections: await seedMatrix(id),
-        note: "Compliance-run elevates the matrix seed. Calibration later.",
+        sections: seeded.sections,
+        chainStatus: seeded.chainStatus,
+        note: "Compliance-run refreshes the matrix from atom-chain. Calibration later.",
       });
       return;
     }

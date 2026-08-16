@@ -84,7 +84,64 @@ function fileToBase64(file) {
   });
 }
 
-function escapeHtml(s) {
+function mountMap(el, geojson, parcelNodeId) {
+  el.innerHTML = "";
+  const box = document.createElement("div");
+  box.id = "map";
+  el.appendChild(box);
+  if (!window.maplibregl) {
+    box.textContent = "Map library failed to load.";
+    return;
+  }
+  const map = new window.maplibregl.Map({
+    container: box,
+    style: {
+      version: 8,
+      sources: {
+        osm: {
+          type: "raster",
+          tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+          tileSize: 256,
+          attribution: "© OpenStreetMap",
+        },
+      },
+      layers: [{ id: "osm", type: "raster", source: "osm" }],
+    },
+    center: [-97.3274, 30.10287],
+    zoom: 17,
+  });
+  map.on("load", () => {
+    if (!geojson) return;
+    map.addSource("overlay", { type: "geojson", data: geojson });
+    map.addLayer({
+      id: "overlay-fill",
+      type: "fill",
+      source: "overlay",
+      paint: { "fill-color": "#1d4ed8", "fill-opacity": 0.25 },
+    });
+    map.addLayer({
+      id: "overlay-line",
+      type: "line",
+      source: "overlay",
+      paint: { "line-color": "#1d4ed8", "line-width": 2 },
+    });
+    const coords = geojson.features?.[0]?.geometry?.coordinates?.[0];
+    if (Array.isArray(coords) && coords[0]) {
+      map.setCenter(coords[0]);
+    }
+  });
+  const note = document.createElement("p");
+  note.className = "sub";
+  note.textContent = geojson
+    ? `${parcelNodeId} buildable-envelope overlay from atom-chain. Parcel-node geometry pending. Not property-explorer.`
+    : `${parcelNodeId} has no live overlay. This pane does not fake a boundary.`;
+  el.appendChild(note);
+}
+
+async function loadMap(el, engagement) {
+  const data = await api(`/api/plan-review/engagements/${engagement.id}/map-feature`);
+  mountMap(el, data.geojson, engagement.parcelNodeId);
+}
   return String(s || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -216,23 +273,28 @@ async function renderTab(pane, engagement, tab) {
       <p>Scope ${escapeHtml(engagement.scopeText || "(none)")}</p>
       <p>Folder ${escapeHtml(engagement.filesFolderId || "(none yet)")}</p>
       <p class="sub">Zero Cotality. Geocode is extinguished.</p>
+      <div id="intake-map"></div>
     `;
+    await loadMap(document.getElementById("intake-map"), engagement);
     return;
   }
   if (tab === "matrix") {
     const data = await api(`/api/plan-review/engagements/${id}/matrix`);
-    pane.innerHTML = `<ul class="list">${(data.sections || [])
+    pane.innerHTML = `<p class="meta">atom-chain ${escapeHtml(data.chainStatus || "")} · bodyVerbatim=${data.bodyVerbatim}</p>
+      <ul class="list">${(data.sections || [])
       .map((s) => {
         const uncertain = /uncertain|unchecked/i.test(s.determination || "") ? "uncertain" : "";
         return `<li>
           <div class="${uncertain}">${escapeHtml(s.citation || s.sectionId)} — ${escapeHtml(s.determination)}</div>
           <div>${escapeHtml(s.heading || "")}</div>
           <div>${escapeHtml(s.analysis || "")}</div>
-          <div class="meta">atom ${escapeHtml(s.sectionAtomId)} · ${escapeHtml(confText(s.confidence))} · bodyVerbatim=${data.bodyVerbatim}</div>
+          <div class="meta">atom ${escapeHtml(s.sectionAtomId)} · ${escapeHtml(confText(s.confidence))} · book ${escapeHtml(s.bookId || "")}</div>
           ${s.iccDeepLink ? `<a href="${escapeHtml(s.iccDeepLink)}">ICC deep-link</a>` : ""}
         </li>`;
       })
-      .join("")}</ul>`;
+      .join("")}</ul>
+      <div id="matrix-map"></div>`;
+    await loadMap(document.getElementById("matrix-map"), engagement);
     return;
   }
   if (tab === "decide") {
@@ -293,7 +355,9 @@ async function renderTab(pane, engagement, tab) {
       <ul class="list">${(docs.documents || [])
         .map((f) => `<li>${escapeHtml(f.title || f.entityId)}<div class="meta">${escapeHtml(f.entityId)}</div></li>`)
         .join("") || "<li class='meta'>No sheets yet.</li>"}</ul>
-      ${isReviewer() ? `<form class="stack" id="upload"><input type="file" name="file" required /><button type="submit">Upload to Smart Files</button></form>` : ""}
+      ${isReviewer() ? `<form class="stack" id="upload"><input type="file" name="file" required /><button type="submit">Upload to Smart Files</button></form>
+      <button type="button" id="share">Create share token</button>
+      <pre id="share-out" class="meta"></pre>` : ""}
     `;
     const form = document.getElementById("upload");
     if (form) {
@@ -313,13 +377,21 @@ async function renderTab(pane, engagement, tab) {
         go(`/engagements/${id}?tab=files`);
       });
     }
+    const share = document.getElementById("share");
+    if (share) {
+      share.addEventListener("click", async () => {
+        const out = await api(`/api/plan-review/engagements/${id}/share`, {
+          method: "POST",
+          body: persona(),
+        });
+        document.getElementById("share-out").textContent = JSON.stringify(out, null, 2);
+      });
+    }
     return;
   }
   if (tab === "map") {
-    pane.innerHTML = `
-      <p>Parcel ${escapeHtml(engagement.parcelNodeId)}</p>
-      <p class="sub">E6 map compose is not mounted on this host. Import from hauska-map in a clean worktree. Dirty hauska-map is property-explorer. This pane does not fake a boundary.</p>
-    `;
+    pane.innerHTML = `<div id="tab-map"></div>`;
+    await loadMap(document.getElementById("tab-map"), engagement);
     return;
   }
   if (tab === "briefing") {
@@ -328,10 +400,11 @@ async function renderTab(pane, engagement, tab) {
     const data = await api(`/api/plan-review/engagements/${id}/briefing`, {
       query: { sectionAtomId: first?.sectionAtomId || "" },
     });
-    pane.innerHTML = `<ul class="list">${(data.chain || [])
+    pane.innerHTML = `<p class="meta">chain status ${escapeHtml(data.status || "")} · pending ${escapeHtml((data.pendingSlots || []).join(","))}</p>
+      <ul class="list">${(data.chain || [])
       .map(
         (step) => `<li>
-          <div>${escapeHtml(step.role)} · ${escapeHtml(step.atomId)}</div>
+          <div>${escapeHtml(step.role)} · ${escapeHtml(step.slot || "")} · ${escapeHtml(step.atomId || "")}</div>
           <div>${escapeHtml(step.citation || "")}</div>
           <div class="meta">${escapeHtml(confText(step.confidence))} · ${escapeHtml(step.retrievedAt || "")}</div>
           <p>${escapeHtml(step.note || "")}</p>
@@ -420,6 +493,12 @@ async function renderCode() {
   async function run(book, chapter, section) {
     const data = await api("/api/plan-review/code", { query: { book, chapter, section } });
     document.getElementById("code-out").textContent = JSON.stringify(data, null, 2);
+    if (data.chapters) {
+      const nav = document.createElement("p");
+      nav.className = "sub";
+      nav.textContent = `chapters ${data.chapters.join(", ")} · sections ${(data.sections || []).join(", ")}`;
+      document.getElementById("code-out").before(nav);
+    }
   }
   document.getElementById("code").addEventListener("submit", (e) => {
     e.preventDefault();

@@ -29,5 +29,5 @@ button { cursor: pointer; }
 .tabs button[aria-current="true"] { font-weight: 700; }
 .uncertain { font-weight: 700; }
 .footer { color: #555; font-size: 13px; margin-top: 24px; border-top: 1px solid #ddd; padding-top: 12px; }
-form.stack { display: grid; gap: 8px; max-width: 520px; }
+#map { width: 100%; height: 280px; border: 1px solid #ddd; margin: 8px 0; }
 #err[hidden] { display: none; }
