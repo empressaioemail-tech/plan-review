@@ -1,0 +1,15 @@
+{
+  "name": "plan-review",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "apply-sql": "node scripts/apply-sql.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
+  }
+}
