@@ -76,6 +76,20 @@ export async function shareFolder({ folderId, orgId, userId }) {
   });
 }
 
+export const SMART_FILES_APP_URL = "https://smart-files-app.vercel.app";
+export const SMARTSITE_MAP_ORIGIN = "https://smartsite.cloud";
+
+export function dataRoomUrl(token) {
+  if (!token) return null;
+  return `${SMART_FILES_APP_URL}/#share=${token}`;
+}
+
+export function smartSiteMapUrl(parcelNodeId) {
+  const u = new URL(SMARTSITE_MAP_ORIGIN);
+  u.searchParams.set("parcelNodeId", String(parcelNodeId || ""));
+  return u.toString();
+}
+
 export async function readSmartFile(entityId) {
   return filesFetch(`/api/smart-files/files/${encodeURIComponent(entityId)}`);
 }

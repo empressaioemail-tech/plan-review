@@ -2,9 +2,11 @@ import http from "node:http";
 import { QA_PERSONAS, resolvePersona } from "./actors.mjs";
 import {
   createEngagementFolder,
+  dataRoomUrl,
   filesToDataroomAtoms,
   listFolderFiles,
   shareFolder,
+  smartSiteMapUrl,
   uploadToFolder,
 } from "./files.mjs";
 import {
@@ -411,12 +413,16 @@ async function handle(req, res) {
           parcelNodeId: engagement.parcelNodeId,
           geojson: envelopeGeojson(chain),
           overlay: "buildable-envelope",
-          note: "Parcel-node geometry slot is pending. Envelope is the live atom-chain overlay, not a fabricated boundary.",
+          host: "smartsite",
+          smartSiteUrl: smartSiteMapUrl(engagement.parcelNodeId),
+          note: "Map is the live SmartSite surface for this parcel. Envelope GeoJSON is the atom-chain overlay, not a second basemap.",
         });
       } catch (err) {
         json(res, 200, {
           parcelNodeId: engagement.parcelNodeId,
           geojson: null,
+          host: "smartsite",
+          smartSiteUrl: smartSiteMapUrl(engagement.parcelNodeId),
           note: String(err.message),
         });
       }
@@ -598,7 +604,16 @@ async function handle(req, res) {
         orgId: persona.orgId,
         userId: persona.userId,
       });
-      json(res, 201, { ...share, store: "smart-files" });
+      const token = share.token || share.share?.token;
+      json(res, 201, {
+        ...share,
+        store: "smart-files",
+        folderId: next.filesFolderId,
+        kind: "data-room",
+        audience: "submitter",
+        dataRoomUrl: dataRoomUrl(token),
+        note: "Read-only Smart Files data room for the architect, homeowner, or contractor. Not an applicant portal. Token is this engagement folder only.",
+      });
       return;
     }
 

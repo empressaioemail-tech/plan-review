@@ -84,63 +84,32 @@ function fileToBase64(file) {
   });
 }
 
-function mountMap(el, geojson, parcelNodeId) {
+function mountSmartSite(el, parcelNodeId, smartSiteUrl) {
   el.innerHTML = "";
-  const box = document.createElement("div");
-  box.id = "map";
-  el.appendChild(box);
-  if (!window.maplibregl) {
-    box.textContent = "Map library failed to load.";
-    return;
-  }
-  const map = new window.maplibregl.Map({
-    container: box,
-    style: {
-      version: 8,
-      sources: {
-        osm: {
-          type: "raster",
-          tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-          tileSize: 256,
-          attribution: "© OpenStreetMap",
-        },
-      },
-      layers: [{ id: "osm", type: "raster", source: "osm" }],
-    },
-    center: [-97.3274, 30.10287],
-    zoom: 17,
-  });
-  map.on("load", () => {
-    if (!geojson) return;
-    map.addSource("overlay", { type: "geojson", data: geojson });
-    map.addLayer({
-      id: "overlay-fill",
-      type: "fill",
-      source: "overlay",
-      paint: { "fill-color": "#1d4ed8", "fill-opacity": 0.25 },
-    });
-    map.addLayer({
-      id: "overlay-line",
-      type: "line",
-      source: "overlay",
-      paint: { "line-color": "#1d4ed8", "line-width": 2 },
-    });
-    const coords = geojson.features?.[0]?.geometry?.coordinates?.[0];
-    if (Array.isArray(coords) && coords[0]) {
-      map.setCenter(coords[0]);
-    }
-  });
+  const url =
+    smartSiteUrl ||
+    `https://smartsite.cloud/?parcelNodeId=${encodeURIComponent(parcelNodeId || "")}`;
+  const frame = document.createElement("iframe");
+  frame.className = "smartsite-frame";
+  frame.title = `SmartSite map ${parcelNodeId || ""}`;
+  frame.src = url;
+  frame.setAttribute("referrerpolicy", "no-referrer-when-downgrade");
+  el.appendChild(frame);
   const note = document.createElement("p");
   note.className = "sub";
-  note.textContent = geojson
-    ? `${parcelNodeId} buildable-envelope overlay from atom-chain. Parcel-node geometry pending. Not property-explorer.`
-    : `${parcelNodeId} has no live overlay. This pane does not fake a boundary.`;
+  note.innerHTML = `${escapeHtml(parcelNodeId)} on the live SmartSite map. <a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">Open in SmartSite</a>. Plan-review remains the host.`;
   el.appendChild(note);
 }
 
 async function loadMap(el, engagement) {
-  const data = await api(`/api/plan-review/engagements/${engagement.id}/map-feature`);
-  mountMap(el, data.geojson, engagement.parcelNodeId);
+  let smartSiteUrl = null;
+  try {
+    const data = await api(`/api/plan-review/engagements/${engagement.id}/map-feature`);
+    smartSiteUrl = data.smartSiteUrl || null;
+  } catch {
+    smartSiteUrl = null;
+  }
+  mountSmartSite(el, engagement.parcelNodeId, smartSiteUrl);
 }
 
 function escapeHtml(s) {
@@ -358,8 +327,12 @@ async function renderTab(pane, engagement, tab) {
         .map((f) => `<li>${escapeHtml(f.title || f.entityId)}<div class="meta">${escapeHtml(f.entityId)}</div></li>`)
         .join("") || "<li class='meta'>No sheets yet.</li>"}</ul>
       ${isReviewer() ? `<form class="stack" id="upload"><input type="file" name="file" required /><button type="submit">Upload to Smart Files</button></form>
-      <button type="button" id="share">Create share token</button>
-      <pre id="share-out" class="meta"></pre>` : ""}
+      <div class="share-box">
+        <p>Share this room as a data room with the architect, homeowner, or contractor who submitted the plan. They open a read-only Smart Files link. They do not need an icc-demo login. This is not an applicant portal.</p>
+        <button type="button" id="share">Share data room</button>
+        <p id="share-out" class="meta" hidden></p>
+        <p id="share-link" class="sub" hidden></p>
+      </div>` : `<p class="sub">Observer can see the room. Reviewer uploads and shares the data room.</p>`}
     `;
     const form = document.getElementById("upload");
     if (form) {
@@ -386,7 +359,23 @@ async function renderTab(pane, engagement, tab) {
           method: "POST",
           body: persona(),
         });
-        document.getElementById("share-out").textContent = JSON.stringify(out, null, 2);
+        const url = out.dataRoomUrl || "";
+        const outEl = document.getElementById("share-out");
+        const linkEl = document.getElementById("share-link");
+        outEl.hidden = false;
+        outEl.textContent = `folder ${out.folderId || ""} · kind ${out.kind || "data-room"} · store ${out.store || "smart-files"}`;
+        linkEl.hidden = false;
+        if (url) {
+          linkEl.innerHTML = `Submitter data room: <a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a>`;
+          try {
+            await navigator.clipboard.writeText(url);
+            linkEl.innerHTML += " (copied)";
+          } catch {
+            /* clipboard may be blocked; URL is still on screen */
+          }
+        } else {
+          linkEl.textContent = "Share succeeded but no dataRoomUrl. Do not invent a link.";
+        }
       });
     }
     return;
