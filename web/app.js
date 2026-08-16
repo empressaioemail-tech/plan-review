@@ -142,6 +142,8 @@ async function loadMap(el, engagement) {
   const data = await api(`/api/plan-review/engagements/${engagement.id}/map-feature`);
   mountMap(el, data.geojson, engagement.parcelNodeId);
 }
+
+function escapeHtml(s) {
   return String(s || "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
