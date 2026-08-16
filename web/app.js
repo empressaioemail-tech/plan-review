@@ -4,7 +4,6 @@ const PERSONAS = [
   { orgId: "icc-demo", userId: "applicant", label: "Applicant / icc-demo" },
 ];
 const STAGES = ["Submitted", "In Review", "Approved", "Approved with Conditions", "Denied"];
-const ICC_ACTOR = "did:hauska:actor:org:icc";
 
 const app = document.getElementById("app");
 const errEl = document.getElementById("err");
@@ -26,10 +25,6 @@ function persona() {
 
 function isReviewer() {
   return personaValue() === "icc-demo/reviewer";
-}
-
-function isObserver() {
-  return personaValue() === "icc-demo/observer";
 }
 
 function setPersona(value) {
@@ -144,7 +139,7 @@ function requireGate(next) {
 function renderGate() {
   app.innerHTML = `
     <h2>Gate</h2>
-    <p class="sub">Pick a persona. Unauthed ICC content is refused.</p>
+    <p class="sub">Pick a persona. This host is plan review, not the ICC Demo portal.</p>
     <form class="stack" id="gate">
       <select name="persona">
         ${PERSONAS.map((p) => `<option value="${p.orgId}/${p.userId}">${p.label}</option>`).join("")}
@@ -155,8 +150,7 @@ function renderGate() {
   document.getElementById("gate").addEventListener("submit", (e) => {
     e.preventDefault();
     setPersona(new FormData(e.target).get("persona"));
-    if (isObserver()) go("/icc/activity");
-    else if (isApplicant()) go("/applicant");
+    if (isApplicant()) go("/applicant");
     else go("/queue");
   });
 }
@@ -506,65 +500,6 @@ async function renderCode() {
   await run("IBC2018P6", "", "R311.7");
 }
 
-async function renderActivity() {
-  if (requireGate()) return;
-  const data = await api("/api/icc/activity", { query: { actorDid: ICC_ACTOR } });
-  const summary = data.summary || { n: 0, amount: 0, bySource: [] };
-  const sources = (summary.bySource || [])
-    .map((s) => `${s.source} ${s.n}/${s.amount}`)
-    .join(" · ");
-  const rows = data.rows || [];
-  app.innerHTML = `
-    <h2>ICC activity portal</h2>
-    <p>This is ICC's view of plan-review citations. Command Center is not this portal. The activity table is the store for this demo.</p>
-    <p class="sub">Actor ${escapeHtml(data.actorDid)} · host ${escapeHtml(data.host || "plan-review")} · store ${escapeHtml(data.store || "plan-review-activity")}</p>
-    <div class="grid">
-      <div class="card"><h3>Fixture rate</h3><p>${escapeHtml(String(data.fixtureRate ?? 0.01))}</p><p class="meta">${escapeHtml(data.rateLabel || "")}</p></div>
-      <div class="card"><h3>Accrued</h3><p>${escapeHtml(String(summary.n))} rows</p><p class="meta">amount ${escapeHtml(String(summary.amount))}</p></div>
-      <div class="card"><h3>Books</h3><p>IBC 2018 ${escapeHtml(data.entitled?.IBC2018P6 || "live")}</p><p class="meta">IPMC 2018 ${escapeHtml(data.entitled?.IPMC2018P2 || "typed-absence")}</p></div>
-      <div class="card"><h3>Sources</h3><p class="meta">${escapeHtml(sources || "none")}</p></div>
-    </div>
-    <table class="activity">
-      <thead>
-        <tr>
-          <th>When</th><th>Source</th><th>Book</th><th>Section</th><th>Engagement</th><th>Rate</th><th>Amount</th><th>Tier</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${
-          rows
-            .map((r) => {
-              const eng = r.engagementId
-                ? `<a href="/engagements/${escapeHtml(r.engagementId)}">${escapeHtml(r.engagementId.slice(0, 8))}</a>`
-                : "";
-              return `<tr>
-                <td class="meta">${escapeHtml(r.createdAt || "")}</td>
-                <td>${escapeHtml(r.source || "")}</td>
-                <td>${escapeHtml(r.bookId || "")}</td>
-                <td>${escapeHtml(r.sectionId || "")}</td>
-                <td>${eng}</td>
-                <td>${escapeHtml(String(r.rate ?? ""))}</td>
-                <td>${escapeHtml(String(r.amount ?? ""))}</td>
-                <td>${escapeHtml(r.tier || "")}</td>
-              </tr>`;
-            })
-            .join("") || `<tr><td colspan="8" class="meta">No rows yet. Reviewer work and MCP Codex calls accrue here. Planner does not seed them.</td></tr>`
-        }
-      </tbody>
-    </table>
-    <p class="footer">${escapeHtml(data.ipmcResidual || "IPMC 2018 not ingested (G-41)")}.
-      Purge selectors: sourceAdapter=${escapeHtml(data.purge?.sourceAdapter || "icc-code-connect")},
-      jurisdictionTenant=${escapeHtml(data.purge?.jurisdictionTenant || "icc-model-code")}.
-      Not a customer-facing surface. ${escapeHtml(data.note || "")}</p>
-  `;
-  document.querySelectorAll(".activity a[href^='/engagements/']").forEach((a) => {
-    a.addEventListener("click", (e) => {
-      e.preventDefault();
-      go(a.getAttribute("href"));
-    });
-  });
-}
-
 async function renderApplicant() {
   const token = new URL(location.href).searchParams.get("token") || "";
   if (!token) {
@@ -594,8 +529,6 @@ async function render() {
   whoEl.textContent = personaValue() || (pathOf() === "/applicant" ? "applicant" : "not gated");
   const path = pathOf();
   const tab = new URL(location.href).searchParams.get("tab") || "intake";
-  const iccNav = document.querySelector('nav a[href="/icc/activity"]');
-  if (iccNav) iccNav.hidden = isApplicant() || path === "/applicant";
   try {
     if (path === "/applicant") {
       await renderApplicant();
@@ -623,19 +556,12 @@ async function render() {
       return;
     }
     if (path === "/icc/activity" || path === "/icc") {
-      if (isApplicant()) {
-        app.innerHTML = `<p>Applicant does not see ICC activity.</p><p><a href="/queue">Queue</a></p>`;
-        return;
-      }
-      await renderActivity();
+      app.innerHTML = `<p>ICC Demo is a separate portal and domain. It is not a path on plan review.</p><p><a href="/queue">Queue</a></p>`;
       return;
     }
-    app.innerHTML = `<p>Unknown route. Use queue, library, code, applicant, or ICC activity.</p>`;
+    app.innerHTML = `<p>Unknown route. Use queue, library, code, or applicant.</p>`;
   } catch (err) {
     showErr(err.message);
-    if (err.status === 401 && path.startsWith("/icc")) {
-      app.innerHTML = `<p>Unauthed ICC content refused.</p><p><a href="/gate">Gate</a></p>`;
-    }
   }
 }
 
