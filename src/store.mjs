@@ -276,14 +276,42 @@ export async function recordActivity(row) {
 }
 
 export async function listActivity(actorDid) {
+  const actor = actorDid || "did:hauska:actor:org:icc";
   const { rows } = await getPool().query(
     `SELECT * FROM plan_review_activity
       WHERE actor_did = $1
       ORDER BY created_at DESC
       LIMIT 200`,
-    [actorDid || "did:hauska:actor:org:icc"],
+    [actor],
   );
   return rows.map(mapActivity);
+}
+
+export async function summarizeActivity(actorDid) {
+  const actor = actorDid || "did:hauska:actor:org:icc";
+  const { rows: totals } = await getPool().query(
+    `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0)::float8 AS amount
+       FROM plan_review_activity
+      WHERE actor_did = $1`,
+    [actor],
+  );
+  const { rows: bySource } = await getPool().query(
+    `SELECT source, COUNT(*)::int AS n, COALESCE(SUM(amount), 0)::float8 AS amount
+       FROM plan_review_activity
+      WHERE actor_did = $1
+      GROUP BY source
+      ORDER BY n DESC`,
+    [actor],
+  );
+  return {
+    n: totals[0]?.n || 0,
+    amount: Number(totals[0]?.amount || 0),
+    bySource: bySource.map((r) => ({
+      source: r.source,
+      n: r.n,
+      amount: Number(r.amount),
+    })),
+  };
 }
 
 function mapEngagement(r) {

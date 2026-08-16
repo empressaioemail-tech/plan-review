@@ -18,6 +18,7 @@ import {
   getLetter,
   jurisdictionFromParcel,
   listActivity,
+  summarizeActivity,
   listCanned,
   listEngagements,
   listFindings,
@@ -349,15 +350,27 @@ async function handle(req, res) {
 
   if (req.method === "GET" && path === "/api/icc/activity") {
     const actorDid = url.searchParams.get("actorDid") || ICC_ACTOR;
+    const rows = await listActivity(actorDid);
+    const summary = await summarizeActivity(actorDid);
     json(res, 200, {
+      host: "plan-review",
+      store: "plan-review-activity",
+      role: "icc-observer",
       actorDid,
+      fixtureRate: 0.01,
       rateLabel: "PoC fixture, not a quoted SaaS price",
+      entitled: {
+        IBC2018P6: "live",
+        IPMC2018P2: "typed-absence",
+      },
+      summary,
       ipmcResidual: "IPMC 2018 not ingested (G-41)",
       purge: {
         sourceAdapter: "icc-code-connect",
         jurisdictionTenant: "icc-model-code",
       },
-      rows: await listActivity(actorDid),
+      rows,
+      note: "ICC portal is this plan-review surface. Command Center is not the portal. Activity table is the demo store. Planner is not seeding rows. Hauska inbound meter waits G-30 UPDATE.",
     });
     return;
   }
