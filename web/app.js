@@ -158,14 +158,7 @@ function pathOf() {
 }
 
 function requireGate() {
-  if (isEmbedded()) {
-    if (!personaValue()) setPersona("icc-demo/reviewer");
-    return false;
-  }
-  if (!personaValue()) {
-    go("/gate");
-    return true;
-  }
+  if (!personaValue()) setPersona("icc-demo/reviewer");
   return false;
 }
 
