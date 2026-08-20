@@ -271,15 +271,19 @@ async function renderQueue() {
     ${isReviewer() ? `<form class="stack panel panel-body" id="intake" style="margin-bottom:16px">
       <h3>Intake</h3>
       <p class="hint">Project type plus place. No upload required to start.</p>
-      <input class="inp" name="parcelNodeId" value="48021:28286" required />
-      <input class="inp" name="projectType" value="new-single-family" required />
-      <textarea class="inp" name="scope" placeholder="Optional scope"></textarea>
+      <label class="fieldlabel" for="intake-parcel">Parcel node id</label>
+      <input class="inp" id="intake-parcel" name="parcelNodeId" value="48021:28286" required />
+      <label class="fieldlabel" for="intake-type">Project type</label>
+      <input class="inp" id="intake-type" name="projectType" value="new-single-family" required />
+      <label class="fieldlabel" for="intake-scope">Scope</label>
+      <textarea class="inp" id="intake-scope" name="scope" placeholder="Optional scope"></textarea>
       <button type="submit">Start review</button>
     </form>` : "<p class='sub'>Observer is read-only on intake.</p>"}
     <div class="panel">
       <div class="panel-head">Engagements${stageFilter ? ` · ${escapeHtml(stageFilter)}` : ""}</div>
+      <div class="tablewrap" tabindex="0" role="region" aria-label="Engagements table">
       <table class="dt">
-        <thead><tr><th></th><th>Id</th><th>Place</th><th>Stage</th><th>Type</th></tr></thead>
+        <thead><tr><th><span class="vh">Status rail</span></th><th scope="col">Id</th><th scope="col">Place</th><th scope="col">Stage</th><th scope="col">Type</th></tr></thead>
         <tbody>${
           rows
             .map(
@@ -294,6 +298,7 @@ async function renderQueue() {
             .join("") || `<tr><td colspan="5" class="sub">Empty queue.</td></tr>`
         }</tbody>
       </table>
+      </div>
     </div>
   `;
   app.querySelectorAll(".metric").forEach((b) => {
