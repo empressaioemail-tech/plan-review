@@ -398,3 +398,18 @@ html[data-embed="1"] .shell-main { padding-top: var(--sc-4); }
   .shell-top { height: auto; flex-wrap: wrap; padding: var(--sc-3) var(--sc-4); }
   .metrics { gap: var(--sc-4); }
 }
+
+/* a11y: WCAG 2.1 AA 1.4.10 Reflow. A wide table must scroll inside its own box
+   rather than forcing the page to scroll horizontally at 320 CSS pixels. The
+   container carries tabindex so the scrollable region is reachable by keyboard -
+   adding overflow without it trades a reflow failure for a keyboard failure. */
+.tablewrap { overflow-x: auto; max-width: 100%; }
+.tablewrap:focus-visible { outline: 2px solid var(--sc-focus, #177F78); outline-offset: 2px; }
+
+/* a11y: visually hidden, still in the accessibility tree. */
+.vh { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* a11y: 3.3.2 Labels or Instructions. Every intake field has a visible label;
+   a placeholder is not a label and disappears once the field has content. */
+.fieldlabel { display: block; font-size: 12px; font-weight: 600; margin-bottom: 2px; }
